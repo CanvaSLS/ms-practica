@@ -1,0 +1,123 @@
+# ms-practica (OPCIONAL) · quiz de repaso · productor de QuizCompletado, consumidor de ModuloPublicado
+service: ms-practica
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: us-east-1
+  memorySize: 256
+  timeout: 30
+  logRetentionInDays: 14
+  iam:
+    role: arn:aws:iam::${aws:accountId}:role/LabRole
+  environment:
+    SERVICE_NAME: ms-practica
+    T_TARJETAS: sp_tarjetas
+    T_INTENTOS: sp_intentos
+    TOPIC_ARN: arn:aws:sns:${aws:region}:${aws:accountId}:sp-eventos-${sls:stage}
+
+custom:
+  auth:
+    arn: arn:aws:lambda:${aws:region}:${aws:accountId}:function:ms-auth-${sls:stage}-autorizar
+    type: token
+    identitySource: method.request.header.Authorization
+    resultTtlInSeconds: 0
+
+package:
+  patterns:
+    - '!**'
+    - '*.py'
+
+functions:
+  sembrarTarjetas:
+    handler: handler.sembrar_tarjetas
+    events:
+      - sqs:
+          arn: { Fn::GetAtt: [ColaPractica, Arn] }
+          batchSize: 5
+          functionResponseType: ReportBatchItemFailures
+  obtenerQuiz:
+    handler: handler.obtener_quiz
+    events:
+      - http: { path: practica/quiz, method: get, cors: true, authorizer: "${self:custom.auth}" }
+  completarQuiz:
+    handler: handler.completar_quiz
+    events:
+      - http: { path: practica/quiz/completar, method: post, cors: true, authorizer: "${self:custom.auth}" }
+
+resources:
+  Resources:
+    TTarjetas:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: sp_tarjetas
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: tenant_id, AttributeType: S }
+          - { AttributeName: curso_tarjeta, AttributeType: S }
+        KeySchema:
+          - { AttributeName: tenant_id, KeyType: HASH }
+          - { AttributeName: curso_tarjeta, KeyType: RANGE }
+    TIntentos:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: sp_intentos
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: tenant_id, AttributeType: S }
+          - { AttributeName: alumno_ts, AttributeType: S }
+        KeySchema:
+          - { AttributeName: tenant_id, KeyType: HASH }
+          - { AttributeName: alumno_ts, KeyType: RANGE }
+    ColaPractica:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: sp-practica-${sls:stage}
+        VisibilityTimeout: 180
+        RedrivePolicy:
+          deadLetterTargetArn: { Fn::GetAtt: [ColaPracticaDLQ, Arn] }
+          maxReceiveCount: 3
+    ColaPracticaDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: sp-practica-dlq-${sls:stage}
+        MessageRetentionPeriod: 1209600
+    PoliticaColaPractica:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [{ Ref: ColaPractica }]
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: { Fn::GetAtt: [ColaPractica, Arn] }
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${self:provider.environment.TOPIC_ARN}
+    SuscripcionPractica:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${self:provider.environment.TOPIC_ARN}
+        Protocol: sqs
+        Endpoint: { Fn::GetAtt: [ColaPractica, Arn] }
+        FilterPolicyScope: MessageAttributes
+        FilterPolicy:
+          evento: [ModuloPublicado]
+    GatewayResponse4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseType: DEFAULT_4XX
+        RestApiId: { Ref: ApiGatewayRestApi }
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
+    GatewayResponse5XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseType: DEFAULT_5XX
+        RestApiId: { Ref: ApiGatewayRestApi }
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization'"
