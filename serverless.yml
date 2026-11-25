@@ -105,6 +105,19 @@ resources:
         FilterPolicyScope: MessageAttributes
         FilterPolicy:
           evento: [ModuloPublicado]
+    AlarmaDLQPractica:          # monitoreo proactivo: avisa en cuanto algo cae a la DLQ
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: sp-practica-dlq-con-mensajes-${sls:stage}
+        Namespace: AWS/SQS
+        MetricName: ApproximateNumberOfMessagesVisible
+        Dimensions: [{ Name: QueueName, Value: { Fn::GetAtt: [ColaPracticaDLQ, QueueName] } }]
+        Statistic: Maximum
+        Period: 60
+        EvaluationPeriods: 1
+        Threshold: 0
+        ComparisonOperator: GreaterThanThreshold
+        TreatMissingData: notBreaching
     GatewayResponse4XX:
       Type: AWS::ApiGateway::GatewayResponse
       Properties:
