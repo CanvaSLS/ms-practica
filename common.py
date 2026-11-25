@@ -1,4 +1,4 @@
-"""Utilidades compartidas por los microservicios de StudyPulse.
+"""Utilidades compartidas por los microservicios de CanvaSLS.
 
 Cada microservicio vive en su propio repositorio, por eso este archivo se COPIA
 (idéntico) en ms-auth, ms-cursos, ms-evaluaciones, ms-analitica,
