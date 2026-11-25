@@ -34,7 +34,8 @@ functions:
     events:
       - sqs:
           arn: { Fn::GetAtt: [ColaPractica, Arn] }
-          batchSize: 5
+          batchSize: 10
+          maximumConcurrency: 2
           functionResponseType: ReportBatchItemFailures
   obtenerQuiz:
     handler: handler.obtener_quiz
